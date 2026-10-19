@@ -10,7 +10,10 @@
 ## 🌐 互動式 Web 儀表板 (Live Dashboard)
 
 專案提供已部署至 GitHub Pages 的動態互動儀表板：
+
 👉 **[點此造訪 Live Demo: https://contemplator.github.io/nchu-startup-50/](https://contemplator.github.io/nchu-startup-50/)**
+
+![Web Dashboard Preview](./dashboard_preview.png)
 
 * 🎚️ **前向特徵選取探索器**：動態滑動特徵數量（1~5），即時聯動 RMSE 與 R-squared 雙折線圖與表格。
 * 💡 **過擬合智能警示**：動態判別最佳泛化點（2 特徵）與雜訊過擬合區間（3~5 特徵）。
@@ -22,6 +25,7 @@
 ## 📁 專案檔案清單
 
 * **[Startup_50_MLR_CRISP_DM.ipynb](./Startup_50_MLR_CRISP_DM.ipynb)**：核心分析 Jupyter Notebook，完整涵蓋 CRISP-DM 六步驟、特徵選取演算法與模型診斷。
+* **[dashboard_preview.png](./dashboard_preview.png)**：互動式 Web 儀表板執行與過擬合警示預覽截圖。
 * **[web/](./web/)**：Clean Light Academic 風格的靜態互動網頁（`index.html`, `style.css`, `app.js`, `data.json`）。
 * **[export_web_data.py](./export_web_data.py)**：機器學習資料處理與前端 JSON 匯出腳本。
 * **[.github/workflows/deploy.yml](./.github/workflows/deploy.yml)**：GitHub Actions CI/CD 自動化建置與 Pages 部署流程。
