@@ -1,0 +1,198 @@
+{
+  "dataset_summary": {
+    "total_samples": 50,
+    "train_samples": 40,
+    "test_samples": 10,
+    "features": [
+      "R&D Spend",
+      "Administration",
+      "Marketing Spend",
+      "State_Florida",
+      "State_New York"
+    ]
+  },
+  "correlations": {
+    "R&D Spend": {
+      "R&D Spend": 1.0,
+      "Administration": 0.24195524508168925,
+      "Marketing Spend": 0.7242481330538794,
+      "Profit": 0.9729004656594831
+    },
+    "Administration": {
+      "R&D Spend": 0.24195524508168925,
+      "Administration": 1.0,
+      "Marketing Spend": -0.03215387512538653,
+      "Profit": 0.20071656826872125
+    },
+    "Marketing Spend": {
+      "R&D Spend": 0.7242481330538794,
+      "Administration": -0.03215387512538653,
+      "Marketing Spend": 1.0,
+      "Profit": 0.7477657217414768
+    },
+    "Profit": {
+      "R&D Spend": 0.9729004656594831,
+      "Administration": 0.20071656826872125,
+      "Marketing Spend": 0.7477657217414768,
+      "Profit": 1.0
+    }
+  },
+  "forward_selection_steps": [
+    {
+      "step": 1,
+      "selected_features": [
+        "R&D Spend"
+      ],
+      "added_feature": "R&D Spend",
+      "rmse": 8274.868018,
+      "r2": 0.946459,
+      "mae": 6772.45328,
+      "intercept": 48416.2977,
+      "coefficients": {
+        "R&D Spend": 0.8516227998779371
+      }
+    },
+    {
+      "step": 2,
+      "selected_features": [
+        "R&D Spend",
+        "Marketing Spend"
+      ],
+      "added_feature": "Marketing Spend",
+      "rmse": 8198.797191,
+      "r2": 0.947439,
+      "mae": 6886.594588,
+      "intercept": 46346.3388,
+      "coefficients": {
+        "R&D Spend": 0.7886182999424615,
+        "Marketing Spend": 0.032576627317020684
+      }
+    },
+    {
+      "step": 3,
+      "selected_features": [
+        "R&D Spend",
+        "Marketing Spend",
+        "State_New York"
+      ],
+      "added_feature": "State_New York",
+      "rmse": 8309.059683,
+      "r2": 0.946015,
+      "mae": 7028.435332,
+      "intercept": 46100.2913,
+      "coefficients": {
+        "R&D Spend": 0.7858709815066744,
+        "Marketing Spend": 0.033271829410322355,
+        "State_New York": 864.0018700527347
+      }
+    },
+    {
+      "step": 4,
+      "selected_features": [
+        "R&D Spend",
+        "Marketing Spend",
+        "State_New York",
+        "State_Florida"
+      ],
+      "added_feature": "State_Florida",
+      "rmse": 8409.916714,
+      "r2": 0.944697,
+      "mae": 7109.161998,
+      "intercept": 46329.0602,
+      "coefficients": {
+        "R&D Spend": 0.7851417173112172,
+        "Marketing Spend": 0.033956402340301096,
+        "State_New York": 554.657332826717,
+        "State_Florida": -826.4681587619036
+      }
+    },
+    {
+      "step": 5,
+      "selected_features": [
+        "R&D Spend",
+        "Marketing Spend",
+        "State_New York",
+        "State_Florida",
+        "Administration"
+      ],
+      "added_feature": "Administration",
+      "rmse": 9137.990153,
+      "r2": 0.934707,
+      "mae": 7514.29366,
+      "intercept": 42554.1676,
+      "coefficients": {
+        "R&D Spend": 0.773467192732945,
+        "Marketing Spend": 0.03661002586378126,
+        "State_New York": 699.369052518143,
+        "State_Florida": -959.2841600576189,
+        "Administration": 0.03288459753626341
+      }
+    }
+  ],
+  "optimal_model": {
+    "features": [
+      "R&D Spend",
+      "Marketing Spend"
+    ],
+    "intercept": 46346.34,
+    "coefficients": {
+      "R&D Spend": 0.7886,
+      "Marketing Spend": 0.0326
+    },
+    "formula": "Profit = 46346.34 + 0.7886 * (R&D Spend) + 0.0326 * (Marketing Spend)",
+    "rmse": 8198.8,
+    "r2": 0.947439
+  },
+  "test_samples": [
+    {
+      "actual": 103282.38,
+      "predicted": 102284.65,
+      "residual": 997.73
+    },
+    {
+      "actual": 144259.4,
+      "predicted": 133873.92,
+      "residual": 10385.48
+    },
+    {
+      "actual": 146121.95,
+      "predicted": 134182.15,
+      "residual": 11939.8
+    },
+    {
+      "actual": 77798.83,
+      "predicted": 73701.11,
+      "residual": 4097.72
+    },
+    {
+      "actual": 191050.39,
+      "predicted": 180642.25,
+      "residual": 10408.14
+    },
+    {
+      "actual": 105008.31,
+      "predicted": 114717.25,
+      "residual": -9708.94
+    },
+    {
+      "actual": 81229.06,
+      "predicted": 68335.08,
+      "residual": 12893.98
+    },
+    {
+      "actual": 97483.56,
+      "predicted": 97433.46,
+      "residual": 50.1
+    },
+    {
+      "actual": 110352.25,
+      "predicted": 114580.92,
+      "residual": -4228.67
+    },
+    {
+      "actual": 166187.94,
+      "predicted": 170343.32,
+      "residual": -4155.38
+    }
+  ]
+}

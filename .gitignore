@@ -2,8 +2,10 @@
 *.pkl
 startup_profit_predictor_best_model.pkl
 
-# 中間暫存檔與分析文字
+# 中間暫存檔與參考講義（僅本地私有參考，不公開進入版本庫）
 pdf_extracted_text.txt
+Reference/
+build_notebook.py
 
 # Python 暫存與快取
 __pycache__/
