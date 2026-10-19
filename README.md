@@ -26,6 +26,7 @@
 
 * **[Startup_50_MLR_CRISP_DM.ipynb](./Startup_50_MLR_CRISP_DM.ipynb)**：50_Startups 利潤預測 Jupyter Notebook，完整涵蓋 CRISP-DM 六步驟、前向特徵選取演算法與模型診斷。
 * **[Boston_Housing_MLR_CRISP_DM.ipynb](./Boston_Housing_MLR_CRISP_DM.ipynb)**：Boston Housing 房價預測 Jupyter Notebook，實作五大特徵選取方法（Forward, Backward, Lasso, RFE, SelectKBest）與 1~13 特徵雙折線圖評估。
+* **[CarDekho_Used_Car_Price_MLR_CRISP_DM.ipynb](./CarDekho_Used_Car_Price_MLR_CRISP_DM.ipynb)**：CarDekho 二手車價格預測 Jupyter Notebook，涵蓋車齡衍生特徵工程、五大特徵選取方法與 1~8 特徵折線圖評估。
 * **[dashboard_preview.png](./dashboard_preview.png)**：互動式 Web 儀表板執行與過擬合警示預覽截圖。
 * **[web/](./web/)**：Clean Light Academic 風格的靜態互動網頁（`index.html`, `style.css`, `app.js`, `data.json`）。
 * **[export_web_data.py](./export_web_data.py)**：機器學習資料處理與前端 JSON 匯出腳本。
