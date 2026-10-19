@@ -3,8 +3,8 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>50_Startups 多元線性回歸與特徵選取互動儀表板</title>
-  <meta name="description" content="遵循 CRISP-DM 流程之 50_Startups 新創公司利潤預測與前向特徵選取（Forward Selection）互動分析平台。">
+  <title>AIoT 多元線性回歸與特徵選取互動儀表板 (Multi-Dataset)</title>
+  <meta name="description" content="遵循 CRISP-DM 流程之多元線性回歸與前向特徵選取（Forward Selection）互動分析平台，支援 50_Startups、Boston Housing 與 CarDekho 二手車定價三大資料集。">
   <link rel="stylesheet" href="style.css">
   <!-- Chart.js CDN for interactive charts -->
   <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
@@ -15,8 +15,8 @@
     <!-- Header / Hero Section -->
     <header class="hero">
       <div class="hero-left">
-        <h1>📊 50_Startups 多元回歸與特徵選取分析</h1>
-        <p>基於 <strong>CRISP-DM</strong> 方法論，深入探討前向逐步選取（Forward Stepwise Selection）在小樣本新創資料集中的模型泛化、偏差-變異數權衡與過擬合現象。</p>
+        <h1>📊 AIoT 多元回歸與特徵選取互動儀表板</h1>
+        <p id="hero-dataset-desc">基於 <strong>CRISP-DM</strong> 方法論，深入探討前向逐步選取（Forward Stepwise Selection）在不同領域資料集中的模型泛化、偏差-變異數權衡與過擬合現象。</p>
       </div>
       <div class="hero-badges">
         <span class="badge badge-primary">CRISP-DM Standard</span>
@@ -29,24 +29,36 @@
       </div>
     </header>
 
+    <!-- DATASET SWITCHER TABS -->
+    <div class="dataset-tabs-wrapper">
+      <div class="dataset-tabs-header">選取要分析的機器學習資料集：</div>
+      <div class="dataset-tabs">
+        <button class="tab-btn active" data-dataset="startups" id="tab-startups">
+          🏢 50_Startups (新創獲利預測)
+        </button>
+        <button class="tab-btn" data-dataset="boston" id="tab-boston">
+          🏡 Boston Housing (房價預測)
+        </button>
+        <button class="tab-btn" data-dataset="cardekho" id="tab-cardekho">
+          🚗 CarDekho (二手車價格預測)
+        </button>
+      </div>
+    </div>
+
     <!-- SECTION 1: Forward Selection Sandbox -->
     <section class="card" id="section-feature-selection">
       <div class="card-header">
-        <h2 class="card-title">🔍 前向逐步特徵選取探索器 (Forward Feature Selection)</h2>
-        <div class="card-subtitle">滑動切換特徵數量（1 到 5），觀察測試集 RMSE 與 R-squared 的動態變化與最佳模型拐點。</div>
+        <h2 class="card-title" id="card-feature-title">🔍 前向逐步特徵選取探索器 (Forward Feature Selection)</h2>
+        <div class="card-subtitle" id="card-feature-subtitle">滑動切換特徵數量，觀察測試集 RMSE 與 R-squared 的動態變化與最佳模型拐點。</div>
       </div>
 
       <!-- Controls Panel -->
       <div class="controls-panel">
         <div class="slider-container">
-          <span class="slider-label" id="slider-label-text">特徵數量：<strong id="current-feature-count">2</strong> / 5</span>
+          <span class="slider-label" id="slider-label-text">特徵數量：<strong id="current-feature-count">2</strong> / <span id="total-feature-count">5</span></span>
           <input type="range" id="feature-slider" class="range-slider" min="1" max="5" value="2" step="1">
-          <div class="step-buttons">
-            <button class="btn-step" data-step="1">1</button>
-            <button class="btn-step active" data-step="2">2 (最佳)</button>
-            <button class="btn-step" data-step="3">3</button>
-            <button class="btn-step" data-step="4">4</button>
-            <button class="btn-step" data-step="5">5</button>
+          <div class="step-buttons" id="step-buttons-container">
+            <!-- Dynamically populated -->
           </div>
         </div>
       </div>
@@ -54,13 +66,13 @@
       <!-- Dynamic Metrics Highlight -->
       <div class="metrics-banner">
         <div class="metric-box">
-          <div class="metric-label">當前選取特徵</div>
-          <div class="metric-value" id="disp-selected-features" style="font-size: 15px; font-weight: 700; color: #1e40af; margin-top: 8px;">
+          <div class="metric-label">當前選取特徵組合</div>
+          <div class="metric-value" id="disp-selected-features" style="font-size: 14px; font-weight: 700; color: #1e40af; margin-top: 8px; word-break: break-all;">
             [R&D Spend, Marketing Spend]
           </div>
         </div>
         <div class="metric-box">
-          <div class="metric-label">測試集 RMSE (誤差)</div>
+          <div class="metric-label" id="label-rmse">測試集 RMSE (誤差)</div>
           <div class="metric-value" id="disp-rmse" style="color: #059669;">8,198.80</div>
         </div>
         <div class="metric-box">
@@ -68,8 +80,8 @@
           <div class="metric-value" id="disp-r2" style="color: #1e40af;">0.947439</div>
         </div>
         <div class="metric-box">
-          <div class="metric-label">最新加入之變數</div>
-          <div class="metric-value" id="disp-added-feature" style="font-size: 16px; color: #475569; margin-top: 6px;">
+          <div class="metric-label">最新入選變數</div>
+          <div class="metric-value" id="disp-added-feature" style="font-size: 15px; color: #475569; margin-top: 6px;">
             Marketing Spend
           </div>
         </div>
@@ -81,7 +93,7 @@
         <div>
           <strong id="alert-title">🎯 最佳泛化平衡點 (Sweet Spot)</strong>
           <div id="alert-desc" style="margin-top: 4px;">
-            當特徵數為 2（R&D Spend + Marketing Spend）時，測試集 RMSE 達到全域最低（8,198.80 美元），R² 達到最高（0.9474），此時模型具備最強的泛化預測能力！
+            分析卡片加載中...
           </div>
         </div>
       </div>
@@ -115,43 +127,23 @@
       </div>
     </section>
 
-    <!-- SECTION 2: What-If Profit Simulator -->
+    <!-- SECTION 2: What-If Simulator -->
     <section class="card" id="section-profit-simulator">
       <div class="card-header">
-        <h2 class="card-title">🧮 What-If 即時利潤預測計算機</h2>
-        <div class="card-subtitle">基於最佳 2-Feature 模型方程式，拉動支出預算滑桿，即時試算新創公司預期年淨利。</div>
+        <h2 class="card-title" id="sim-title">🧮 What-If 即時預測模擬器</h2>
+        <div class="card-subtitle" id="sim-subtitle">基於該資料集之最佳特徵模型，拉動關鍵變數滑桿，即時推估目標變數結果。</div>
       </div>
 
       <div class="calc-grid">
-        <div class="calc-inputs">
-          <div class="input-group">
-            <div class="input-header">
-              <span>研發支出 (R&D Spend)</span>
-              <span class="input-val-badge" id="badge-rd">$120,000</span>
-            </div>
-            <input type="range" id="input-rd" class="range-slider" min="0" max="200000" step="5000" value="120000">
-            <div style="display: flex; justify-content: space-between; font-size: 11px; color: #94a3b8; margin-top: 4px;">
-              <span>$0</span><span>$100k</span><span>$200,000</span>
-            </div>
-          </div>
-
-          <div class="input-group">
-            <div class="input-header">
-              <span>行銷支出 (Marketing Spend)</span>
-              <span class="input-val-badge" id="badge-mkt">$250,000</span>
-            </div>
-            <input type="range" id="input-mkt" class="range-slider" min="0" max="500000" step="10000" value="250000">
-            <div style="display: flex; justify-content: space-between; font-size: 11px; color: #94a3b8; margin-top: 4px;">
-              <span>$0</span><span>$250k</span><span>$500,000</span>
-            </div>
-          </div>
+        <div class="calc-inputs" id="calc-inputs-container">
+          <!-- Dynamically populated by app.js based on dataset -->
         </div>
 
         <div class="calc-display">
-          <div style="font-size: 13px; font-weight: 600; color: #64748b; text-transform: uppercase;">預估年淨利潤 (Estimated Profit)</div>
+          <div style="font-size: 13px; font-weight: 600; color: #64748b; text-transform: uppercase;" id="calc-result-title">預估結果</div>
           <div class="calc-profit-val" id="calc-profit-result">$150,042.86</div>
           <div class="calc-formula-text" id="calc-formula-display">
-            Profit = 46975.86 + (0.7966 × R&D) + (0.0299 × Marketing)
+            Formula loading...
           </div>
         </div>
       </div>
@@ -161,7 +153,7 @@
     <section class="card" id="section-diagnostics">
       <div class="card-header">
         <h2 class="card-title">📈 模型診斷與測試集擬合分析 (Model Diagnostics)</h2>
-        <div class="card-subtitle">檢視測試集（10 筆樣本）之實際利潤與模型預測利潤分佈，驗證線性回歸的擬合品質。</div>
+        <div class="card-subtitle" id="diag-subtitle">檢視測試集樣本之實際值與模型預測值分佈，驗證線性回歸的擬合品質。</div>
       </div>
 
       <div class="diag-grid">
@@ -176,7 +168,7 @@
 
     <!-- Footer -->
     <footer>
-      <p>50_Startups CRISP-DM Machine Learning Project &copy; 2026. Interactive Dashboard powered by Chart.js & GitHub Pages.</p>
+      <p>AIoT Multi-Dataset CRISP-DM Machine Learning Dashboard &copy; 2026. Powered by Chart.js & GitHub Pages.</p>
     </footer>
 
   </div>

@@ -1,5 +1,5 @@
 /* ==========================================================================
-   Clean Light Theme - Modern Academic & Data Science Dashboard
+   Clean Light Theme - Modern Academic & Multi-Dataset Machine Learning Dashboard
    ========================================================================== */
 
 :root {
@@ -70,8 +70,8 @@ header.hero {
   background: var(--bg-surface);
   border: 1px solid var(--border-light);
   border-radius: var(--radius-lg);
-  padding: 36px 32px;
-  margin-bottom: 28px;
+  padding: 32px;
+  margin-bottom: 24px;
   box-shadow: var(--shadow-sm);
   display: flex;
   justify-content: space-between;
@@ -129,13 +129,68 @@ header.hero {
   color: #0f172a;
 }
 
+/* Dataset Switcher Tabs Bar */
+.dataset-tabs-wrapper {
+  background: var(--bg-surface);
+  border: 1px solid var(--border-light);
+  border-radius: var(--radius-md);
+  padding: 8px;
+  margin-bottom: 24px;
+  box-shadow: var(--shadow-sm);
+}
+
+.dataset-tabs-header {
+  font-size: 12px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--text-light);
+  padding: 4px 10px 8px 10px;
+}
+
+.dataset-tabs {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.tab-btn {
+  flex: 1;
+  min-width: 220px;
+  padding: 12px 18px;
+  font-size: 14px;
+  font-weight: 700;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border-light);
+  background: var(--bg-surface-alt);
+  color: var(--text-muted);
+  cursor: pointer;
+  transition: all 0.2s ease;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+}
+
+.tab-btn:hover {
+  background: #e2e8f0;
+  color: var(--text-main);
+}
+
+.tab-btn.active {
+  background: var(--primary);
+  color: #ffffff;
+  border-color: var(--primary);
+  box-shadow: var(--shadow-sm);
+}
+
 /* Section Cards */
 .card {
   background: var(--bg-surface);
   border: 1px solid var(--border-light);
   border-radius: var(--radius-md);
   padding: 28px;
-  margin-bottom: 28px;
+  margin-bottom: 24px;
   box-shadow: var(--shadow-sm);
 }
 
@@ -176,6 +231,7 @@ header.hero {
   display: flex;
   align-items: center;
   gap: 16px;
+  flex-wrap: wrap;
 }
 
 .slider-label {
@@ -187,6 +243,7 @@ header.hero {
 
 .range-slider {
   flex: 1;
+  min-width: 200px;
   height: 8px;
   border-radius: 4px;
   background: #cbd5e1;
@@ -213,11 +270,12 @@ header.hero {
 
 .step-buttons {
   display: flex;
-  gap: 8px;
+  gap: 6px;
+  flex-wrap: wrap;
 }
 
 .btn-step {
-  padding: 6px 14px;
+  padding: 5px 12px;
   font-size: 13px;
   font-weight: 600;
   border-radius: var(--radius-sm);
@@ -265,7 +323,7 @@ header.hero {
 }
 
 .metric-value {
-  font-size: 24px;
+  font-size: 22px;
   font-weight: 800;
   color: var(--text-main);
   margin-top: 4px;
@@ -359,7 +417,7 @@ table.data-table tr.optimal-row {
   border-left: 4px solid var(--success);
 }
 
-/* Profit Calculator */
+/* Profit / Value Calculator */
 .calc-grid {
   display: grid;
   grid-template-columns: 1fr 1fr;
@@ -402,7 +460,7 @@ table.data-table tr.optimal-row {
 }
 
 .calc-profit-val {
-  font-size: 36px;
+  font-size: 34px;
   font-weight: 900;
   color: var(--primary);
   font-family: var(--font-mono);

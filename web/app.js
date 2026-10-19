@@ -1,9 +1,13 @@
 /**
- * 50_Startups Interactive Dashboard Logic
+ * AIoT Multi-Dataset Interactive Machine Learning Dashboard
+ * Supports: 50_Startups, Boston Housing, CarDekho
  * Powered by Vanilla JS & Chart.js
  */
 
-let appData = null;
+let allData = null;
+let currentKey = 'startups';
+let currentDataset = null;
+
 let chartRMSE = null;
 let chartR2 = null;
 let chartScatter = null;
@@ -14,9 +18,9 @@ document.addEventListener('DOMContentLoaded', async () => {
   try {
     const response = await fetch('data.json');
     if (!response.ok) throw new Error(`HTTP Error: ${response.status}`);
-    appData = await response.json();
+    allData = await response.json();
     
-    initDashboard();
+    initMultiDatasetDashboard();
   } catch (error) {
     console.error('Failed to load data.json:', error);
     document.querySelector('.container').insertAdjacentHTML('afterbegin', `
@@ -27,39 +31,176 @@ document.addEventListener('DOMContentLoaded', async () => {
   }
 });
 
-function initDashboard() {
-  renderTable();
-  initCharts();
-  initSliderControls();
-  initProfitSimulator();
-  initDiagnosticCharts();
+function initMultiDatasetDashboard() {
+  // Bind Tab Switching Events
+  const tabButtons = document.querySelectorAll('.tab-btn');
+  tabButtons.forEach(btn => {
+    btn.addEventListener('click', () => {
+      const targetDataset = btn.getAttribute('data-dataset');
+      if (targetDataset !== currentKey) {
+        switchDataset(targetDataset);
+      }
+    });
+  });
 
-  // Set initial state to Step 2 (Optimal)
-  setFeatureStep(2);
+  // Load Initial Dataset
+  switchDataset('startups');
 }
 
-// 1. Populate Comparison Table
+function switchDataset(key) {
+  currentKey = key;
+  currentDataset = allData.datasets[key];
+  if (!currentDataset) return;
+
+  // 1. Update Active Tab UI
+  document.querySelectorAll('.tab-btn').forEach(btn => {
+    btn.classList.toggle('active', btn.getAttribute('data-dataset') === key);
+  });
+
+  // 2. Update Header Info & Colab Link
+  document.getElementById('hero-dataset-desc').textContent = currentDataset.description;
+  const colabLink = document.getElementById('link-colab');
+  if (key === 'startups') {
+    colabLink.href = 'https://colab.research.google.com/github/contemplator/nchu-startup-50/blob/main/Startup_50_MLR_CRISP_DM.ipynb';
+  } else if (key === 'boston') {
+    colabLink.href = 'https://colab.research.google.com/github/contemplator/nchu-startup-50/blob/main/Boston_Housing_MLR_CRISP_DM.ipynb';
+  } else if (key === 'cardekho') {
+    colabLink.href = 'https://colab.research.google.com/github/contemplator/nchu-startup-50/blob/main/CarDekho_Used_Car_Price_MLR_CRISP_DM.ipynb';
+  }
+
+  // 3. Update Labels
+  document.getElementById('label-rmse').textContent = `測試集 RMSE (${currentDataset.unit_label})`;
+  document.getElementById('total-feature-count').textContent = currentDataset.total_features;
+
+  // 4. Rebuild Slider Controls
+  buildSliderControls();
+
+  // 5. Render Comparison Table
+  renderTable();
+
+  // 6. Update or Re-init Charts
+  renderDualCharts();
+
+  // 7. Setup What-If Simulator
+  buildSimulator();
+
+  // 8. Render Diagnostics
+  renderDiagnostics();
+
+  // 9. Set to Optimal Step
+  setFeatureStep(currentDataset.optimal_k);
+}
+
+// ----------------------------------------------------
+// 1. Dynamic Controls & Step Buttons
+// ----------------------------------------------------
+function buildSliderControls() {
+  const slider = document.getElementById('feature-slider');
+  const container = document.getElementById('step-buttons-container');
+  
+  slider.min = 1;
+  slider.max = currentDataset.total_features;
+  slider.value = currentDataset.optimal_k;
+
+  container.innerHTML = '';
+  for (let i = 1; i <= currentDataset.total_features; i++) {
+    const btn = document.createElement('button');
+    btn.className = 'btn-step';
+    btn.setAttribute('data-step', i);
+    btn.textContent = i === currentDataset.optimal_k ? `${i} (最佳)` : i;
+    btn.addEventListener('click', () => setFeatureStep(i));
+    container.appendChild(btn);
+  }
+
+  slider.oninput = (e) => setFeatureStep(parseInt(e.target.value));
+}
+
+function setFeatureStep(stepNumber) {
+  const step = currentDataset.steps.find(s => s.step === stepNumber);
+  if (!step) return;
+
+  // Update Slider & Buttons
+  document.getElementById('feature-slider').value = stepNumber;
+  document.getElementById('current-feature-count').textContent = stepNumber;
+
+  document.querySelectorAll('.btn-step').forEach(btn => {
+    btn.classList.toggle('active', parseInt(btn.getAttribute('data-step')) === stepNumber);
+  });
+
+  // Update Dynamic Metrics
+  document.getElementById('disp-selected-features').textContent = `[${step.selected_features.join(', ')}]`;
+  document.getElementById('disp-rmse').textContent = `${currentDataset.value_prefix}${step.rmse.toLocaleString('en-US', {minimumFractionDigits: 2})}${currentDataset.value_suffix}`;
+  document.getElementById('disp-r2').textContent = step.r2.toFixed(4);
+  document.getElementById('disp-added-feature').textContent = step.added_feature;
+
+  // Update Overfitting Alert Card
+  updateAlertBox(stepNumber);
+
+  // Update Active Table Row
+  document.querySelectorAll('#table-body tr').forEach(tr => tr.classList.remove('active-row'));
+  const activeTr = document.getElementById(`row-step-${stepNumber}`);
+  if (activeTr) activeTr.classList.add('active-row');
+
+  // Update Highlighted Point in Dual Charts
+  if (chartRMSE && chartR2) {
+    const pointRadii = currentDataset.steps.map(s => s.step === stepNumber ? 10 : 5);
+    const pointColors = currentDataset.steps.map(s => s.step === stepNumber ? '#dc2626' : '#1e40af');
+
+    chartRMSE.data.datasets[0].pointRadius = pointRadii;
+    chartRMSE.data.datasets[0].pointBackgroundColor = pointColors;
+    chartRMSE.update('none');
+
+    chartR2.data.datasets[0].pointRadius = pointRadii;
+    chartR2.data.datasets[0].pointBackgroundColor = pointColors;
+    chartR2.update('none');
+  }
+}
+
+function updateAlertBox(stepNumber) {
+  const alertBox = document.getElementById('overfitting-alert');
+  const alertTitle = document.getElementById('alert-title');
+  const alertDesc = document.getElementById('alert-desc');
+  const optK = currentDataset.optimal_k;
+
+  if (stepNumber === optK) {
+    alertBox.className = 'alert-box alert-optimal';
+    alertTitle.textContent = `🎯 全域最佳泛化平衡點 (Global Sweet Spot: k=${optK})`;
+    alertDesc.textContent = `當選取 ${optK} 個特徵時，測試集 RMSE 降至全域最低點，R² 達到最佳峰值。此模型在偏差與變異數之間取得最卓越的平衡！`;
+  } else if (stepNumber < optK) {
+    alertBox.className = 'alert-box alert-info';
+    alertTitle.textContent = `ℹ️ 特徵精簡階段 (Underfitting / High Bias: k=${stepNumber})`;
+    alertDesc.textContent = `當前特徵數量較少，模型結構精簡，但尚未充分吸收其他關鍵自變數的邊際解釋力。`;
+  } else {
+    alertBox.className = 'alert-box alert-warning';
+    alertTitle.textContent = `⚠️ 進入過擬合警戒區 (Overfitting / Noise: k=${stepNumber})`;
+    alertDesc.textContent = `特徵數超越最佳點 ${optK} 後，測試集 RMSE 出現逆勢回升或 R² 停滯下降。新增之變數對預測無實質幫助，反而引入隨機雜訊與多重共線性！`;
+  }
+}
+
+// ----------------------------------------------------
+// 2. Comparison Table
+// ----------------------------------------------------
 function renderTable() {
   const tbody = document.getElementById('table-body');
   tbody.innerHTML = '';
 
-  appData.forward_selection_steps.forEach(step => {
+  currentDataset.steps.forEach(step => {
     const tr = document.createElement('tr');
     tr.id = `row-step-${step.step}`;
 
     let statusBadge = '<span style="color:#64748b;">次佳模型</span>';
-    if (step.step === 2) {
+    if (step.step === currentDataset.optimal_k) {
       statusBadge = '<span style="color:#059669;font-weight:700;">⭐ 全域最優 (Sweet Spot)</span>';
       tr.classList.add('optimal-row');
-    } else if (step.step >= 3) {
+    } else if (step.step > currentDataset.optimal_k) {
       statusBadge = '<span style="color:#d97706;font-weight:600;">⚠️ 輕度/重度過擬合</span>';
     }
 
     tr.innerHTML = `
       <td><strong>${step.step}</strong></td>
       <td><code>[${step.selected_features.join(', ')}]</code></td>
-      <td style="font-family:var(--font-mono);">${step.rmse.toLocaleString('en-US', {minimumFractionDigits: 6})}</td>
-      <td style="font-family:var(--font-mono);">${step.r2.toFixed(6)}</td>
+      <td style="font-family:var(--font-mono);">${currentDataset.value_prefix}${step.rmse.toLocaleString('en-US', {minimumFractionDigits: 4})}${currentDataset.value_suffix}</td>
+      <td style="font-family:var(--font-mono);">${step.r2.toFixed(4)}</td>
       <td>${statusBadge}</td>
     `;
 
@@ -68,16 +209,17 @@ function renderTable() {
   });
 }
 
-// 2. Initialize Dual Charts (RMSE & R-squared)
-function initCharts() {
-  const steps = appData.forward_selection_steps;
+// ----------------------------------------------------
+// 3. Dual Line Charts (Chart.js)
+// ----------------------------------------------------
+function renderDualCharts() {
+  const steps = currentDataset.steps;
   const labels = steps.map(s => s.step);
   const rmseData = steps.map(s => s.rmse);
   const r2Data = steps.map(s => s.r2);
 
-  // Default Chart.js Config
-  Chart.defaults.font.family = 'Inter, -apple-system, sans-serif';
-  Chart.defaults.color = '#475569';
+  if (chartRMSE) chartRMSE.destroy();
+  if (chartR2) chartR2.destroy();
 
   // RMSE Chart
   const ctxRMSE = document.getElementById('chart-rmse').getContext('2d');
@@ -86,17 +228,14 @@ function initCharts() {
     data: {
       labels: labels,
       datasets: [{
-        label: 'RMSE (均方根誤差)',
+        label: `RMSE (${currentDataset.unit_label})`,
         data: rmseData,
-        borderColor: '#1f77b4',
-        backgroundColor: '#1f77b4',
+        borderColor: '#1e40af',
+        backgroundColor: '#1e40af',
         borderWidth: 2.5,
         tension: 0,
-        pointRadius: [5, 9, 5, 5, 5],
-        pointHoverRadius: 9,
-        pointBackgroundColor: labels.map(l => l === 2 ? '#dc2626' : '#1f77b4'),
-        pointBorderColor: labels.map(l => l === 2 ? '#ffffff' : '#1f77b4'),
-        pointBorderWidth: 2
+        pointRadius: 5,
+        pointHoverRadius: 9
       }]
     },
     options: {
@@ -105,26 +244,19 @@ function initCharts() {
       plugins: {
         title: {
           display: true,
-          text: 'RMSE by Number of Features',
+          text: `RMSE by Number of Features (${currentDataset.title})`,
           font: { size: 14, weight: 'bold' },
           color: '#0f172a'
         },
-        legend: { display: false },
-        tooltip: {
-          callbacks: {
-            label: (ctx) => `RMSE: ${ctx.parsed.y.toLocaleString('en-US', {minimumFractionDigits: 2})}`
-          }
-        }
+        legend: { display: false }
       },
       scales: {
         x: {
-          title: { display: true, text: 'Number of Features', font: { weight: 600 } },
+          title: { display: true, text: 'Number of Features (k)', font: { weight: 600 } },
           grid: { color: '#f1f5f9' }
         },
         y: {
           title: { display: true, text: 'RMSE', font: { weight: 600 } },
-          min: 8100,
-          max: 9200,
           grid: { color: '#e2e8f0' }
         }
       }
@@ -138,17 +270,14 @@ function initCharts() {
     data: {
       labels: labels,
       datasets: [{
-        label: 'R-squared (判定係數)',
+        label: 'R-squared (R²)',
         data: r2Data,
-        borderColor: '#1f77b4',
-        backgroundColor: '#1f77b4',
+        borderColor: '#059669',
+        backgroundColor: '#059669',
         borderWidth: 2.5,
         tension: 0,
-        pointRadius: [5, 9, 5, 5, 5],
-        pointHoverRadius: 9,
-        pointBackgroundColor: labels.map(l => l === 2 ? '#dc2626' : '#1f77b4'),
-        pointBorderColor: labels.map(l => l === 2 ? '#ffffff' : '#1f77b4'),
-        pointBorderWidth: 2
+        pointRadius: 5,
+        pointHoverRadius: 9
       }]
     },
     options: {
@@ -157,26 +286,19 @@ function initCharts() {
       plugins: {
         title: {
           display: true,
-          text: 'R-squared by Number of Features',
+          text: `R-squared by Number of Features (${currentDataset.title})`,
           font: { size: 14, weight: 'bold' },
           color: '#0f172a'
         },
-        legend: { display: false },
-        tooltip: {
-          callbacks: {
-            label: (ctx) => `R-squared: ${ctx.parsed.y.toFixed(6)}`
-          }
-        }
+        legend: { display: false }
       },
       scales: {
         x: {
-          title: { display: true, text: 'Number of Features', font: { weight: 600 } },
+          title: { display: true, text: 'Number of Features (k)', font: { weight: 600 } },
           grid: { color: '#f1f5f9' }
         },
         y: {
           title: { display: true, text: 'R-squared', font: { weight: 600 } },
-          min: 0.934,
-          max: 0.949,
           grid: { color: '#e2e8f0' }
         }
       }
@@ -184,137 +306,114 @@ function initCharts() {
   });
 }
 
-// 3. Slider & Step Controls
-function initSliderControls() {
-  const slider = document.getElementById('feature-slider');
-  slider.addEventListener('input', (e) => {
-    setFeatureStep(parseInt(e.target.value));
-  });
+// ----------------------------------------------------
+// 4. Dynamic What-If Simulator
+// ----------------------------------------------------
+function buildSimulator() {
+  const container = document.getElementById('calc-inputs-container');
+  const sim = currentDataset.simulator;
+  const title = document.getElementById('calc-result-title');
+  const formulaDisp = document.getElementById('calc-formula-display');
+  
+  title.textContent = `預估 ${currentDataset.unit_label}`;
 
-  const buttons = document.querySelectorAll('.btn-step');
-  buttons.forEach(btn => {
-    btn.addEventListener('click', () => {
-      setFeatureStep(parseInt(btn.getAttribute('data-step')));
-    });
-  });
-}
+  container.innerHTML = `
+    <div class="input-group">
+      <div class="input-header">
+        <span>${sim.input1.label}</span>
+        <span class="input-val-badge" id="badge-in1">${sim.input1.prefix}${sim.input1.default}${sim.input1.suffix}</span>
+      </div>
+      <input type="range" id="sim-input-1" class="range-slider" 
+             min="${sim.input1.min}" max="${sim.input1.max}" step="${sim.input1.step}" value="${sim.input1.default}">
+      <div style="display:flex;justify-content:space-between;font-size:11px;color:#94a3b8;margin-top:4px;">
+        <span>${sim.input1.prefix}${sim.input1.min}${sim.input1.suffix}</span>
+        <span>${sim.input1.prefix}${sim.input1.max}${sim.input1.suffix}</span>
+      </div>
+    </div>
 
-function setFeatureStep(stepNumber) {
-  const step = appData.forward_selection_steps.find(s => s.step === stepNumber);
-  if (!step) return;
+    <div class="input-group">
+      <div class="input-header">
+        <span>${sim.input2.label}</span>
+        <span class="input-val-badge" id="badge-in2">${sim.input2.prefix}${sim.input2.default}${sim.input2.suffix}</span>
+      </div>
+      <input type="range" id="sim-input-2" class="range-slider" 
+             min="${sim.input2.min}" max="${sim.input2.max}" step="${sim.input2.step}" value="${sim.input2.default}">
+      <div style="display:flex;justify-content:space-between;font-size:11px;color:#94a3b8;margin-top:4px;">
+        <span>${sim.input2.prefix}${sim.input2.min}${sim.input2.suffix}</span>
+        <span>${sim.input2.prefix}${sim.input2.max}${sim.input2.suffix}</span>
+      </div>
+    </div>
+  `;
 
-  // Update UI Inputs
-  document.getElementById('feature-slider').value = stepNumber;
-  document.getElementById('current-feature-count').textContent = stepNumber;
+  const in1 = document.getElementById('sim-input-1');
+  const in2 = document.getElementById('sim-input-2');
+  const badge1 = document.getElementById('badge-in1');
+  const badge2 = document.getElementById('badge-in2');
+  const resultDisp = document.getElementById('calc-profit-result');
 
-  document.querySelectorAll('.btn-step').forEach(btn => {
-    btn.classList.toggle('active', parseInt(btn.getAttribute('data-step')) === stepNumber);
-  });
+  function calculate() {
+    const v1 = parseFloat(in1.value);
+    const v2 = parseFloat(in2.value);
 
-  // Update Metrics
-  document.getElementById('disp-selected-features').textContent = `[${step.selected_features.join(', ')}]`;
-  document.getElementById('disp-rmse').textContent = step.rmse.toLocaleString('en-US', {minimumFractionDigits: 2});
-  document.getElementById('disp-r2').textContent = step.r2.toFixed(6);
-  document.getElementById('disp-added-feature').textContent = step.added_feature;
+    badge1.textContent = `${sim.input1.prefix}${v1.toLocaleString()}${sim.input1.suffix}`;
+    badge2.textContent = `${sim.input2.prefix}${v2.toLocaleString()}${sim.input2.suffix}`;
 
-  // Update Overfitting Alert Box
-  const alertBox = document.getElementById('overfitting-alert');
-  const alertTitle = document.getElementById('alert-title');
-  const alertDesc = document.getElementById('alert-desc');
+    let predicted = 0;
+    const opt = currentDataset.optimal_model;
 
-  if (stepNumber === 1) {
-    alertBox.className = 'alert-box alert-info';
-    alertTitle.textContent = 'ℹ️ 單特徵模型 (Baseline)';
-    alertDesc.textContent = '單靠【R&D Spend】即能解釋 94.65% 的利潤變異（RMSE: 8274.87 美元），但尚未納入行銷支出的邊際增益。';
-  } else if (stepNumber === 2) {
-    alertBox.className = 'alert-box alert-optimal';
-    alertTitle.textContent = '🎯 最佳泛化平衡點 (Global Sweet Spot)';
-    alertDesc.textContent = '當特徵數為 2（R&D Spend + Marketing Spend）時，測試集 RMSE 降至全域最低（8,198.80 美元），R² 達到最高（0.947439），泛化能力最卓越！';
-  } else if (stepNumber === 3) {
-    alertBox.className = 'alert-box alert-warning';
-    alertTitle.textContent = '⚠️ 開始出現輕微過擬合 (加入 State_New York)';
-    alertDesc.textContent = '納入【State_New York】後，測試集 RMSE 逆勢上升至 8,309.06 美元（R² 下降），顯示州別資訊並未帶來有效預測力，反而消耗模型自由度。';
-  } else if (stepNumber === 4) {
-    alertBox.className = 'alert-box alert-warning';
-    alertTitle.textContent = '⚠️ 過擬合擴大 (加入 State_Florida)';
-    alertDesc.textContent = '連續納入兩項州別虛擬變數後，RMSE 進一步升至 8,409.92 美元，模型開始學習測試集不存在的雜訊。';
-  } else if (stepNumber === 5) {
-    alertBox.className = 'alert-box alert-warning';
-    alertBox.style.background = '#fef2f2';
-    alertBox.style.borderColor = '#fecaca';
-    alertBox.style.color = '#991b1b';
-    alertTitle.textContent = '🚨 顯著過擬合與多重共線性 (加入 Administration)';
-    alertDesc.textContent = '加入【Administration 行政支出】後，測試集 RMSE 暴增至 9,137.99 美元（暴增近 939 美元！）。小樣本塞入 5 個特徵造成嚴重過擬合。';
+    if (currentKey === 'startups') {
+      const b0 = opt.intercept;
+      const b_rd = opt.coefficients['R&D Spend'] || 0.7966;
+      const b_mkt = opt.coefficients['Marketing Spend'] || 0.0299;
+      predicted = b0 + (b_rd * v1) + (b_mkt * v2);
+      formulaDisp.textContent = `Profit = ${b0.toFixed(2)} + (${b_rd} × RD) + (${b_mkt} × Mkt)`;
+      resultDisp.textContent = `$${predicted.toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2})}`;
+    } else if (currentKey === 'boston') {
+      const b0 = opt.intercept;
+      const b_rm = opt.coefficients['rm'] || 4.2;
+      const b_lstat = opt.coefficients['lstat'] || -0.55;
+      predicted = b0 + (b_rm * v1) + (b_lstat * v2);
+      formulaDisp.textContent = `medv = ${b0.toFixed(2)} + (${b_rm} × rm) + (${b_lstat} × lstat)`;
+      resultDisp.textContent = `$${(predicted * 1000).toLocaleString('en-US', {minimumFractionDigits: 0, maximumFractionDigits: 0})} (medv: ${predicted.toFixed(2)}k)`;
+    } else if (currentKey === 'cardekho') {
+      const b0 = opt.intercept;
+      const b_p = opt.coefficients['Present_Price'] || 0.45;
+      const b_age = opt.coefficients['Car_Age'] || -0.32;
+      predicted = Math.max(0.2, b0 + (b_p * v1) + (b_age * v2));
+      formulaDisp.textContent = `Selling_Price = ${b0.toFixed(2)} + (${b_p} × Present_Price) + (${b_age} × Age)`;
+      resultDisp.textContent = `${predicted.toFixed(2)} 萬盧比`;
+    }
   }
 
-  // Update Table Row Highlight
-  document.querySelectorAll('#table-body tr').forEach(tr => tr.classList.remove('active-row'));
-  const activeTr = document.getElementById(`row-step-${stepNumber}`);
-  if (activeTr) activeTr.classList.add('active-row');
+  in1.addEventListener('input', calculate);
+  in2.addEventListener('input', calculate);
 
-  // Update Point Highlights on Charts
-  if (chartRMSE && chartR2) {
-    const pointRadii = [1, 2, 3, 4, 5].map(i => i === stepNumber ? 9 : 5);
-    const pointColors = [1, 2, 3, 4, 5].map(i => i === stepNumber ? '#dc2626' : '#1f77b4');
-
-    chartRMSE.data.datasets[0].pointRadius = pointRadii;
-    chartRMSE.data.datasets[0].pointBackgroundColor = pointColors;
-    chartRMSE.update('none');
-
-    chartR2.data.datasets[0].pointRadius = pointRadii;
-    chartR2.data.datasets[0].pointBackgroundColor = pointColors;
-    chartR2.update('none');
-  }
+  calculate();
 }
 
-// 4. What-If Profit Simulator Logic
-function initProfitSimulator() {
-  const rdInput = document.getElementById('input-rd');
-  const mktInput = document.getElementById('input-mkt');
-  const badgeRD = document.getElementById('badge-rd');
-  const badgeMkt = document.getElementById('badge-mkt');
-  const profitResult = document.getElementById('calc-profit-result');
-
-  const opt = appData.optimal_model;
-  const intercept = opt.intercept;
-  const coefRD = opt.coefficients['R&D Spend'];
-  const coefMkt = opt.coefficients['Marketing Spend'];
-
-  function updateProfit() {
-    const rd = parseFloat(rdInput.value);
-    const mkt = parseFloat(mktInput.value);
-
-    badgeRD.textContent = `$${rd.toLocaleString()}`;
-    badgeMkt.textContent = `$${mkt.toLocaleString()}`;
-
-    const profit = intercept + (coefRD * rd) + (coefMkt * mkt);
-    profitResult.textContent = `$${profit.toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2})}`;
-  }
-
-  rdInput.addEventListener('input', updateProfit);
-  mktInput.addEventListener('input', updateProfit);
-
-  updateProfit();
-}
-
+// ----------------------------------------------------
 // 5. Diagnostics Charts
-function initDiagnosticCharts() {
-  const samples = appData.test_samples;
+// ----------------------------------------------------
+function renderDiagnostics() {
+  const samples = currentDataset.test_samples;
   const actuals = samples.map(s => s.actual);
   const preds = samples.map(s => s.predicted);
   const residuals = samples.map(s => s.residual);
 
-  // Scatter Actual vs Predicted
-  const ctxScatter = document.getElementById('chart-actual-vs-pred').getContext('2d');
+  if (chartScatter) chartScatter.destroy();
+  if (chartResiduals) chartResiduals.destroy();
+
   const minVal = Math.min(...actuals, ...preds) * 0.9;
   const maxVal = Math.max(...actuals, ...preds) * 1.05;
 
+  // Scatter Actual vs Predicted
+  const ctxScatter = document.getElementById('chart-actual-vs-pred').getContext('2d');
   chartScatter = new Chart(ctxScatter, {
     type: 'scatter',
     data: {
       datasets: [
         {
-          label: '測試集樣本 (10 startups)',
+          label: '測試集樣本',
           data: samples.map(s => ({ x: s.actual, y: s.predicted })),
           backgroundColor: '#059669',
           borderColor: '#065f46',
@@ -322,7 +421,7 @@ function initDiagnosticCharts() {
           pointHoverRadius: 8
         },
         {
-          label: '完美對角線 (y = x)',
+          label: '理想對角線 (y = x)',
           type: 'line',
           data: [{ x: minVal, y: minVal }, { x: maxVal, y: maxVal }],
           borderColor: '#dc2626',
@@ -338,23 +437,18 @@ function initDiagnosticCharts() {
       plugins: {
         title: {
           display: true,
-          text: '實際利潤 vs 預測利潤 (Actual vs Predicted)',
+          text: `實際值 vs 預測值 (${currentDataset.title})`,
           font: { size: 14, weight: 'bold' },
           color: '#0f172a'
-        },
-        tooltip: {
-          callbacks: {
-            label: (ctx) => `實際: $${ctx.parsed.x.toLocaleString()} | 預測: $${ctx.parsed.y.toLocaleString()}`
-          }
         }
       },
       scales: {
         x: {
-          title: { display: true, text: '實際利潤 (Actual Profit)', font: { weight: 600 } },
+          title: { display: true, text: `實際值 (${currentDataset.unit_label})`, font: { weight: 600 } },
           grid: { color: '#f1f5f9' }
         },
         y: {
-          title: { display: true, text: '預測利潤 (Predicted Profit)', font: { weight: 600 } },
+          title: { display: true, text: `預測值 (${currentDataset.unit_label})`, font: { weight: 600 } },
           grid: { color: '#e2e8f0' }
         }
       }
@@ -368,7 +462,7 @@ function initDiagnosticCharts() {
     data: {
       datasets: [
         {
-          label: '殘差分佈 (Residuals)',
+          label: '殘差',
           data: samples.map(s => ({ x: s.predicted, y: s.residual })),
           backgroundColor: '#2563eb',
           borderColor: '#1e40af',
@@ -376,7 +470,7 @@ function initDiagnosticCharts() {
           pointHoverRadius: 8
         },
         {
-          label: '零誤差基準線 (Residual = 0)',
+          label: '基準線 (Residual = 0)',
           type: 'line',
           data: [{ x: minVal, y: 0 }, { x: maxVal, y: 0 }],
           borderColor: '#64748b',
@@ -395,16 +489,11 @@ function initDiagnosticCharts() {
           text: '殘差分佈圖 (Residuals vs Predicted)',
           font: { size: 14, weight: 'bold' },
           color: '#0f172a'
-        },
-        tooltip: {
-          callbacks: {
-            label: (ctx) => `預測: $${ctx.parsed.x.toLocaleString()} | 殘差: $${ctx.parsed.y.toLocaleString()}`
-          }
         }
       },
       scales: {
         x: {
-          title: { display: true, text: '預測利潤 (Predicted Profit)', font: { weight: 600 } },
+          title: { display: true, text: `預測值 (${currentDataset.unit_label})`, font: { weight: 600 } },
           grid: { color: '#f1f5f9' }
         },
         y: {
