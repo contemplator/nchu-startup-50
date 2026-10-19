@@ -1,0 +1,21 @@
+# 模型輸出檔（由 Startup_50_MLR_CRISP_DM.ipynb 執行時自行生成）
+*.pkl
+startup_profit_predictor_best_model.pkl
+
+# 中間暫存檔與分析文字
+pdf_extracted_text.txt
+
+# Python 暫存與快取
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Jupyter Notebook 檢查點與快取
+.ipynb_checkpoints/
+.virtual_documents/
+
+# 環境與 IDE 設定
+.vscode/
+.idea/
+venv/
+.env
