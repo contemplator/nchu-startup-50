@@ -2,7 +2,7 @@
 
 本專案遵循 **CRISP-DM（跨領域資料採掘標準流程）** 模板，完成 Kaggle 經典新創公司資料集（50_Startups）之多元線性回歸與特徵選取作業，並完美重現作業截圖結果。
 
-[![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/)
+[![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/contemplator/nchu-startup-50/blob/main/Startup_50_MLR_CRISP_DM.ipynb)
 
 ---
 
