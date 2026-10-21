@@ -44,6 +44,7 @@ When reviewing Pull Requests (PRs), commits, or code diffs, evaluate against the
 ---
 
 ## 💬 Review Tone & Feedback Style
+* **Language Preference**: Please provide all review comments, explanations, and improvement suggestions in **Traditional Chinese (繁體中文)**.
 * Be constructive, concise, and pedagogical.
 * Provide exact, actionable code suggestions using markdown diff blocks when pointing out improvements.
 * Praise solid architectural choices and point out potential statistical edge cases.
