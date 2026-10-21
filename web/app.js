@@ -71,11 +71,19 @@ function switchDataset(key) {
     if (!allData.datasets.custom) {
       document.getElementById('hero-dataset-desc').textContent = 
         '請於下方匯入自訂 CSV 資料集（可拖曳檔案或直接貼上）。系統將透過瀏覽器端 WebAssembly (Pyodide & scikit-learn) 當場執行 CRISP-DM 多元回歸與前向特徵選取！';
+      document.getElementById('section-feature-selection').style.display = 'none';
+      document.getElementById('section-profit-simulator').style.display = 'none';
+      document.getElementById('section-diagnostics').style.display = 'none';
       return;
     }
   } else {
     if (customSection) customSection.style.display = 'none';
   }
+
+  // Ensure analysis sections are visible when dataset is ready
+  document.getElementById('section-feature-selection').style.display = 'block';
+  document.getElementById('section-profit-simulator').style.display = 'block';
+  document.getElementById('section-diagnostics').style.display = 'block';
 
   currentDataset = allData.datasets[key];
   if (!currentDataset) return;
@@ -593,14 +601,18 @@ async function getPyodideInstance(statusCallback) {
       });
     }
 
-    pyodideInstance = await loadPyodide({
+    const py = await loadPyodide({
       indexURL: 'https://cdn.jsdelivr.net/pyodide/v0.26.2/full/'
     });
 
     if (statusCallback) statusCallback('正在載入 pandas, scikit-learn 與 numpy (約需 5~10 秒)...');
-    await pyodideInstance.loadPackage(['pandas', 'numpy', 'scikit-learn']);
+    await py.loadPackage(['pandas', 'numpy', 'scikit-learn']);
     if (statusCallback) statusCallback('Python 運算引擎已就緒！');
+    pyodideInstance = py;
     return pyodideInstance;
+  } catch (err) {
+    pyodideInstance = null;
+    throw err;
   } finally {
     isPyodideLoading = false;
   }
@@ -633,52 +645,54 @@ def execute_regression(csv_content, target_col):
             "error": f"在資料集表頭中找不到選定的目標預測變數：'{target_col}'。"
         }, ensure_ascii=False)
     
-    # 3. CRISP-DM 智慧容錯清理：缺失值 (NaN / Null) 檢驗與自適應清理
-    clean_notes = []
-    total_null_rows = int(df.isnull().any(axis=1).sum())
-    if total_null_rows > 0:
-        null_ratio = total_null_rows / len(df)
-        if null_ratio <= 0.10: # 缺失值佔比 <= 10%，自動執行合理清理
-            df = df.dropna()
-            clean_notes.append(f"偵測到 {total_null_rows} 筆包含空值 (NaN) 之樣本（佔比 {null_ratio:.2%}），已依 CRISP-DM 資料準備規範自動清理剔除。")
-        else: # 缺失值過多才中斷提示
-            null_counts = df.isnull().sum()
-            cols_with_null = null_counts[null_counts > 0]
-            details = "、".join([f"「{col}」包含 {cnt} 筆空值" for col, cnt in cols_with_null.items()])
-            return json.dumps({
-                "error": f"資料集缺失值比例過高（共 {total_null_rows} 筆，佔比 {null_ratio:.1%}）：{details}。為避免模型失真，請先進行特徵清理或補值！"
-            }, ensure_ascii=False)
-    
-    # 4. 目標變數型別檢核
+    # 3. 目標變數型別檢核與無變異防呆
     if not np.issubdtype(df[target_col].dtype, np.number):
         return json.dumps({
             "error": f"目標欄位「{target_col}」不是數值型別（目前型別為 {df[target_col].dtype}）。多元線性回歸的預測目標必須為連續數值！"
         }, ensure_ascii=False)
+    if df[target_col].nunique() <= 1:
+        return json.dumps({
+            "error": f"目標欄位「{target_col}」所有樣本數值皆完全相同（變異數為 0），無法進行線性回歸預測。"
+        }, ensure_ascii=False)
     
-    # 5. 特徵切分與高基數純文字欄位自動過濾 (例如 track_id, 歌曲名, 歌手名)
+    # 4. 特徵初篩：排除 Unnamed 與高基數純文字識別標題欄位
+    clean_notes = []
     y = df[target_col]
     X_raw = df.drop(columns=[target_col])
     
-    # 移除純索引或空欄位
     unnamed_cols = [c for c in X_raw.columns if c.startswith('Unnamed:') or c == '']
     if unnamed_cols:
         X_raw = X_raw.drop(columns=unnamed_cols)
         
-    # 依 CRISP-DM 規範過濾類別數過多 (>30) 的純文字識別標題欄位
-    high_card_text = []
-    for col in X_raw.select_dtypes(include=['object', 'category']).columns:
-        if X_raw[col].nunique() > 30:
-            high_card_text.append(col)
+    high_card_text = [c for c in X_raw.select_dtypes(include=['object', 'category']).columns if X_raw[c].nunique() > 30]
     if high_card_text:
         X_raw = X_raw.drop(columns=high_card_text)
-        clean_notes.append(f"已自動排除 {len(high_card_text)} 個非數值文字標題欄位（{', '.join(high_card_text[:3])}{'...' if len(high_card_text)>3 else ''}），專注於核心特徵分析。")
+        clean_notes.append(f"已依 CRISP-DM 規範自動排除 {len(high_card_text)} 個非數值文字標題欄位（{', '.join(high_card_text[:3])}{'...' if len(high_card_text)>3 else ''}），專注於核心特徵分析。")
         
     if X_raw.shape[1] == 0:
         return json.dumps({
             "error": "除目標欄位外，未檢測到任何可用特徵自變數 (X)。"
         }, ensure_ascii=False)
     
-    # One-Hot Encoding (drop_first=True)
+    # 5. CRISP-DM 智慧容錯清理：只針對「實際參與建模的特徵與目標」進行缺失值檢驗
+    model_df = pd.concat([X_raw, y], axis=1)
+    total_null_rows = int(model_df.isnull().any(axis=1).sum())
+    if total_null_rows > 0:
+        null_ratio = total_null_rows / len(model_df)
+        if null_ratio <= 0.10: # 核心特徵缺失佔比 <= 10%，自動執行合理清理
+            clean_model_df = model_df.dropna()
+            X_raw = clean_model_df.drop(columns=[target_col])
+            y = clean_model_df[target_col]
+            clean_notes.append(f"偵測到 {total_null_rows} 筆核心特徵包含空值 (NaN) 之樣本（佔比 {null_ratio:.2%}），已依 CRISP-DM 資料準備規範自動清理剔除。")
+        else: # 核心特徵缺失過多才中斷提示
+            null_counts = model_df.isnull().sum()
+            cols_with_null = null_counts[null_counts > 0]
+            details = "、".join([f"「{col}」包含 {cnt} 筆空值" for col, cnt in cols_with_null.items()])
+            return json.dumps({
+                "error": f"核心特徵缺失值比例過高（共 {total_null_rows} 筆，佔比 {null_ratio:.1%}）：{details}。為避免模型失真，請先進行特徵清理或補值！"
+            }, ensure_ascii=False)
+    
+    # 6. One-Hot Encoding (drop_first=True)
     X = pd.get_dummies(X_raw, drop_first=True)
     
     # 移除零變異數欄位
@@ -729,6 +743,7 @@ def execute_regression(csv_content, target_col):
             'step': k,
             'selected_features': list(selected),
             'added_feature': best_feat,
+            'raw_rmse': best_rmse,
             'rmse': round(best_rmse, 4),
             'r2': round(best_r2, 4),
             'mae': round(best_mae, 4),
@@ -736,8 +751,8 @@ def execute_regression(csv_content, target_col):
             'coefficients': coef_dict
         })
         
-    # 找出全域最佳泛化點（測試集 RMSE 最低點）
-    optimal_k = min(range(len(steps)), key=lambda i: steps[i]['rmse']) + 1
+    # 找出全域最佳泛化點（以未四捨五入的原始 float RMSE 判定最低點）
+    optimal_k = min(range(len(steps)), key=lambda i: steps[i]['raw_rmse']) + 1
     opt_step = steps[optimal_k - 1]
     opt_feats = opt_step['selected_features']
     opt_m = LinearRegression().fit(X_train[opt_feats], y_train)
@@ -976,7 +991,7 @@ function initCustomDatasetUploader() {
   }
 
   function handleFile(file) {
-    if (!file.name.endsWith('.csv')) {
+    if (!file.name.toLowerCase().endsWith('.csv')) {
       showError('檔案格式不符', '請上傳 .csv 格式之檔案！');
       return;
     }
@@ -984,16 +999,18 @@ function initCustomDatasetUploader() {
     reader.onload = (e) => {
       loadedCSVData = e.target.result;
 
-      // 關鍵效能優化：大檔案絕不全文注入 DOM <textarea>，改用智慧預覽模式
+      // 關鍵效能優化：大檔案絕不全文注入 DOM <textarea>，改用唯讀預覽模式保護完整資料
       if (loadedCSVData.length > 30000) {
         let previewEnd = 0;
         for (let count = 0; count < 25 && previewEnd !== -1; count++) {
           previewEnd = loadedCSVData.indexOf('\n', previewEnd + 1);
         }
         const previewSlice = previewEnd !== -1 ? loadedCSVData.slice(0, previewEnd) : loadedCSVData.slice(0, 5000);
-        textArea.value = `${previewSlice}\n\n... [已載入檔案：${file.name}，大小 ${(file.size / (1024 * 1024)).toFixed(1)} MB。已自動啟用流暢預覽模式以確保瀏覽器極致反應速度]`;
+        textArea.value = `${previewSlice}\n\n... [已載入檔案：${file.name}，大小 ${(file.size / (1024 * 1024)).toFixed(1)} MB。已自動啟用唯讀預覽模式以保護完整資料並確保瀏覽器極致反應速度]`;
+        textArea.readOnly = true;
       } else {
         textArea.value = loadedCSVData;
+        textArea.readOnly = false;
       }
 
       currentHeaders = parseCSVHeaders(loadedCSVData);
@@ -1005,6 +1022,7 @@ function initCustomDatasetUploader() {
   // Textarea input event
   if (textArea) {
     textArea.addEventListener('input', () => {
+      if (textArea.readOnly) return;
       loadedCSVData = textArea.value;
       currentHeaders = parseCSVHeaders(loadedCSVData);
       updateColumnDetection(currentHeaders);
@@ -1014,6 +1032,7 @@ function initCustomDatasetUploader() {
   // Sample CSV Button
   if (sampleBtn) {
     sampleBtn.addEventListener('click', () => {
+      textArea.readOnly = false;
       loadedCSVData = SAMPLE_CSV;
       textArea.value = SAMPLE_CSV;
       currentHeaders = parseCSVHeaders(SAMPLE_CSV);
