@@ -8,6 +8,8 @@
   <link rel="stylesheet" href="style.css">
   <!-- Chart.js CDN for interactive charts -->
   <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <!-- Pyodide CDN for client-side Python execution -->
+  <script src="https://cdn.jsdelivr.net/pyodide/v0.26.2/full/pyodide.js" defer></script>
 </head>
 <body>
   <div class="container">
@@ -42,8 +44,87 @@
         <button class="tab-btn" data-dataset="cardekho" id="tab-cardekho">
           🚗 CarDekho (二手車價格預測)
         </button>
+        <button class="tab-btn tab-btn-custom" data-dataset="custom" id="tab-custom">
+          ➕ 自訂資料集 (Custom Dataset)
+        </button>
       </div>
     </div>
+
+    <!-- CUSTOM DATASET INPUT SECTION (Visible when custom tab is active) -->
+    <section class="card" id="section-custom-dataset-input" style="display: none;">
+      <div class="card-header">
+        <h2 class="card-title">📥 匯入自訂 CSV 資料集進行即時回歸分析</h2>
+        <div class="card-subtitle">
+          支援拖曳上傳 <code>.csv</code> 檔案或直接貼上 CSV 內容。系統將透過瀏覽器端 WebAssembly (Pyodide &amp; scikit-learn) 當場執行 CRISP-DM 多元回歸與前向特徵選取。
+        </div>
+      </div>
+
+      <div class="custom-input-grid">
+        <!-- File Upload Area -->
+        <div class="upload-dropzone" id="csv-dropzone">
+          <div class="dropzone-icon">📁</div>
+          <div class="dropzone-text"><strong>拖曳 CSV 檔案至此</strong>，或點擊瀏覽選取</div>
+          <div class="dropzone-hint">支援標準 UTF-8 編碼之逗號分隔 CSV</div>
+          <input type="file" id="csv-file-input" accept=".csv" style="display: none;">
+          <button type="button" class="btn-secondary" id="btn-browse-file" style="margin-top: 10px;">選擇 CSV 檔案</button>
+        </div>
+
+        <!-- Textarea Paste Area -->
+        <div class="paste-zone">
+          <div class="paste-header">
+            <span>或直接在此貼上 CSV 純文字：</span>
+            <button type="button" class="btn-text-action" id="btn-load-sample">✨ 載入廣告銷量範例 CSV</button>
+          </div>
+          <textarea id="csv-text-input" class="csv-textarea" placeholder="例如：
+TV,Radio,Newspaper,Sales
+230.1,37.8,69.2,22.1
+44.5,39.3,45.1,10.4
+..."></textarea>
+        </div>
+      </div>
+
+      <!-- Column Config & Target Selection -->
+      <div class="custom-config-bar" id="custom-config-bar" style="display: none;">
+        <div class="config-field">
+          <label for="custom-target-select"><strong>🎯 目標預測變數 (y)</strong>：</label>
+          <select id="custom-target-select" class="form-select">
+            <!-- Dynamically populated from CSV headers -->
+          </select>
+        </div>
+        <div class="config-detected-info" id="config-detected-info">
+          <!-- Features count & detected headers badges -->
+        </div>
+      </div>
+
+      <!-- Error / Validation Alert Box -->
+      <div class="alert-box alert-error" id="custom-error-box" style="display: none;">
+        <div style="font-size: 20px;">⚠️</div>
+        <div>
+          <strong id="custom-error-title">無法進行回歸分析</strong>
+          <div id="custom-error-desc" style="margin-top: 4px;"></div>
+        </div>
+      </div>
+
+      <!-- Smart Cleaning Success Notice Box -->
+      <div class="alert-box alert-optimal" id="custom-notice-box" style="display: none;">
+        <div style="font-size: 20px;">💡</div>
+        <div>
+          <strong id="custom-notice-title">CRISP-DM 智慧容錯清理已生效</strong>
+          <div id="custom-notice-desc" style="margin-top: 4px;"></div>
+        </div>
+      </div>
+
+      <!-- Action & Engine Status Bar -->
+      <div class="custom-action-bar">
+        <button type="button" class="btn-primary" id="btn-run-analysis" disabled>
+          🚀 開始前向特徵選取與回歸分析
+        </button>
+        <div class="engine-status" id="engine-status">
+          <span class="status-dot"></span>
+          <span id="engine-status-text">請先上傳檔案或貼上 CSV 資料</span>
+        </div>
+      </div>
+    </section>
 
     <!-- SECTION 1: Forward Selection Sandbox -->
     <section class="card" id="section-feature-selection">
