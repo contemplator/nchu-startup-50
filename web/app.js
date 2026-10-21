@@ -43,51 +43,77 @@ function initMultiDatasetDashboard() {
     });
   });
 
+  // Initialize Custom Dataset Uploader Module
+  initCustomDatasetUploader();
+
   // Load Initial Dataset
   switchDataset('startups');
 }
 
 function switchDataset(key) {
   currentKey = key;
-  currentDataset = allData.datasets[key];
-  if (!currentDataset) return;
+  const customSection = document.getElementById('section-custom-dataset-input');
 
   // 1. Update Active Tab UI
   document.querySelectorAll('.tab-btn').forEach(btn => {
     btn.classList.toggle('active', btn.getAttribute('data-dataset') === key);
   });
 
-  // 2. Update Header Info & Colab Link
-  document.getElementById('hero-dataset-desc').textContent = currentDataset.description;
-  const colabLink = document.getElementById('link-colab');
-  if (key === 'startups') {
-    colabLink.href = 'https://colab.research.google.com/github/contemplator/nchu-startup-50/blob/main/Startup_50_MLR_CRISP_DM.ipynb';
-  } else if (key === 'boston') {
-    colabLink.href = 'https://colab.research.google.com/github/contemplator/nchu-startup-50/blob/main/Boston_Housing_MLR_CRISP_DM.ipynb';
-  } else if (key === 'cardekho') {
-    colabLink.href = 'https://colab.research.google.com/github/contemplator/nchu-startup-50/blob/main/CarDekho_Used_Car_Price_MLR_CRISP_DM.ipynb';
+  // 2. Handle Custom Dataset Visibility
+  if (key === 'custom') {
+    if (customSection) customSection.style.display = 'block';
+    const colabLink = document.getElementById('link-colab');
+    if (colabLink) {
+      colabLink.href = 'https://colab.research.google.com/';
+      colabLink.textContent = '⚡ Colab Scratchpad';
+    }
+
+    if (!allData.datasets.custom) {
+      document.getElementById('hero-dataset-desc').textContent = 
+        '請於下方匯入自訂 CSV 資料集（可拖曳檔案或直接貼上）。系統將透過瀏覽器端 WebAssembly (Pyodide & scikit-learn) 當場執行 CRISP-DM 多元回歸與前向特徵選取！';
+      return;
+    }
+  } else {
+    if (customSection) customSection.style.display = 'none';
   }
 
-  // 3. Update Labels
+  currentDataset = allData.datasets[key];
+  if (!currentDataset) return;
+
+  // 3. Update Header Info & Colab Link
+  document.getElementById('hero-dataset-desc').textContent = currentDataset.description;
+  const colabLink = document.getElementById('link-colab');
+  if (colabLink) {
+    colabLink.textContent = '⚡ Open in Colab';
+    if (key === 'startups') {
+      colabLink.href = 'https://colab.research.google.com/github/contemplator/nchu-startup-50/blob/main/Startup_50_MLR_CRISP_DM.ipynb';
+    } else if (key === 'boston') {
+      colabLink.href = 'https://colab.research.google.com/github/contemplator/nchu-startup-50/blob/main/Boston_Housing_MLR_CRISP_DM.ipynb';
+    } else if (key === 'cardekho') {
+      colabLink.href = 'https://colab.research.google.com/github/contemplator/nchu-startup-50/blob/main/CarDekho_Used_Car_Price_MLR_CRISP_DM.ipynb';
+    }
+  }
+
+  // 4. Update Labels
   document.getElementById('label-rmse').textContent = `測試集 RMSE (${currentDataset.unit_label})`;
   document.getElementById('total-feature-count').textContent = currentDataset.total_features;
 
-  // 4. Rebuild Slider Controls
+  // 5. Rebuild Slider Controls
   buildSliderControls();
 
-  // 5. Render Comparison Table
+  // 6. Render Comparison Table
   renderTable();
 
-  // 6. Update or Re-init Charts
+  // 7. Update or Re-init Charts
   renderDualCharts();
 
-  // 7. Setup What-If Simulator
+  // 8. Setup What-If Simulator
   buildSimulator();
 
-  // 8. Render Diagnostics
+  // 9. Render Diagnostics
   renderDiagnostics();
 
-  // 9. Set to Optimal Step
+  // 10. Set to Optimal Step
   setFeatureStep(currentDataset.optimal_k);
 }
 
@@ -382,6 +408,16 @@ function buildSimulator() {
       predicted = Math.max(0.2, b0 + (b_p * v1) + (b_age * v2));
       formulaDisp.textContent = `Selling_Price = ${b0.toFixed(2)} + (${b_p} × Present_Price) + (${b_age} × Age)`;
       resultDisp.textContent = `${predicted.toFixed(2)} 萬盧比`;
+    } else if (sim && sim.is_generic) {
+      const b0 = opt.intercept;
+      const f1 = sim.input1.name;
+      const f2 = sim.input2 ? sim.input2.name : f1;
+      const c1 = opt.coefficients[f1] || 0;
+      const c2 = (sim.input2 && f2 !== f1) ? (opt.coefficients[f2] || 0) : 0;
+      predicted = b0 + (c1 * v1) + (c2 * v2);
+      const sign2 = c2 >= 0 ? '+' : '-';
+      formulaDisp.textContent = `${currentDataset.unit_label} = ${b0.toFixed(2)} + (${c1} × ${f1}) ${sign2} (${Math.abs(c2)} × ${f2})`;
+      resultDisp.textContent = `${currentDataset.value_prefix || ''}${predicted.toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2})}${currentDataset.value_suffix || ''}`;
     }
   }
 
@@ -503,4 +539,489 @@ function renderDiagnostics() {
       }
     }
   });
+}
+
+// ==========================================================================
+// 6. Custom Dataset Import & Pyodide WebAssembly Execution Module
+// ==========================================================================
+
+const SAMPLE_CSV = `TV,Radio,Newspaper,Sales
+230.1,37.8,69.2,22.1
+44.5,39.3,45.1,10.4
+17.2,45.9,69.3,9.3
+151.5,41.3,58.5,18.5
+180.8,10.8,58.4,12.9
+8.7,48.9,75.0,7.2
+57.5,32.8,23.5,11.8
+120.2,19.6,11.6,13.2
+8.6,2.1,1.0,4.8
+199.8,2.6,21.2,10.6
+66.1,5.8,24.2,8.6
+214.7,24.0,4.0,17.4
+23.8,35.1,65.9,9.2
+97.5,7.6,7.2,9.7
+204.1,32.9,46.0,19.0
+195.4,47.7,52.9,22.4
+67.9,36.6,114.0,12.5
+281.4,39.6,55.8,24.4
+69.2,20.5,18.3,11.3
+147.3,23.9,19.1,14.6
+218.4,27.7,53.4,18.0`;
+
+let pyodideInstance = null;
+let isPyodideLoading = false;
+
+async function getPyodideInstance(statusCallback) {
+  if (pyodideInstance) return pyodideInstance;
+  if (isPyodideLoading) {
+    while (isPyodideLoading) {
+      await new Promise(r => setTimeout(r, 200));
+    }
+    return pyodideInstance;
+  }
+
+  isPyodideLoading = true;
+  try {
+    if (statusCallback) statusCallback('正在啟動 WebAssembly Python 執行環境...');
+    if (typeof loadPyodide === 'undefined') {
+      await new Promise((resolve, reject) => {
+        const script = document.createElement('script');
+        script.src = 'https://cdn.jsdelivr.net/pyodide/v0.26.2/full/pyodide.js';
+        script.onload = resolve;
+        script.onerror = reject;
+        document.head.appendChild(script);
+      });
+    }
+
+    pyodideInstance = await loadPyodide({
+      indexURL: 'https://cdn.jsdelivr.net/pyodide/v0.26.2/full/'
+    });
+
+    if (statusCallback) statusCallback('正在載入 pandas, scikit-learn 與 numpy (約需 5~10 秒)...');
+    await pyodideInstance.loadPackage(['pandas', 'numpy', 'scikit-learn']);
+    if (statusCallback) statusCallback('Python 運算引擎已就緒！');
+    return pyodideInstance;
+  } finally {
+    isPyodideLoading = false;
+  }
+}
+
+const PYTHON_ANALYSIS_SCRIPT = `
+import json
+import io
+import pandas as pd
+import numpy as np
+from sklearn.model_selection import train_test_split
+from sklearn.linear_model import LinearRegression
+from sklearn.metrics import r2_score, mean_squared_error, mean_absolute_error
+
+def execute_regression(csv_content, target_col):
+    try:
+        df = pd.read_csv(io.StringIO(csv_content))
+    except Exception as e:
+        return json.dumps({"error": f"CSV 檔案解析失敗：{str(e)}"}, ensure_ascii=False)
+    
+    # 1. 樣本數檢核
+    if len(df) < 10:
+        return json.dumps({
+            "error": f"資料樣本數過少（僅 {len(df)} 筆）。回歸分析與 80/20 訓練/測試集切分至少需要 10 筆以上資料。"
+        }, ensure_ascii=False)
+    
+    # 2. 目標欄位檢核
+    if target_col not in df.columns:
+        return json.dumps({
+            "error": f"在資料集表頭中找不到選定的目標預測變數：'{target_col}'。"
+        }, ensure_ascii=False)
+    
+    # 3. 缺失值 (NaN / Null) 嚴謹檢核
+    null_counts = df.isnull().sum()
+    cols_with_null = null_counts[null_counts > 0]
+    if len(cols_with_null) > 0:
+        details = "、".join([f"「{col}」包含 {cnt} 筆空值" for col, cnt in cols_with_null.items()])
+        return json.dumps({
+            "error": f"檢測到資料集包含缺失值 (NaN)：{details}。為確保回歸模型品質，請先補齊或清理缺失資料後再上傳！"
+        }, ensure_ascii=False)
+    
+    # 4. 目標變數型別檢核
+    if not np.issubdtype(df[target_col].dtype, np.number):
+        return json.dumps({
+            "error": f"目標欄位「{target_col}」不是數值型別（目前型別為 {df[target_col].dtype}）。多元線性回歸的預測目標必須為連續數值！"
+        }, ensure_ascii=False)
+    
+    # 5. 特徵切分與 One-Hot Encoding
+    y = df[target_col]
+    X_raw = df.drop(columns=[target_col])
+    
+    if X_raw.shape[1] == 0:
+        return json.dumps({
+            "error": "除目標欄位外，未檢測到任何可用特徵自變數 (X)。"
+        }, ensure_ascii=False)
+    
+    X = pd.get_dummies(X_raw, drop_first=True)
+    
+    # 移除零變異數欄位
+    zero_var = [c for c in X.columns if X[c].nunique() <= 1]
+    if zero_var:
+        X = X.drop(columns=zero_var)
+    if X.shape[1] == 0:
+        return json.dumps({
+            "error": "所有候選特徵之數值皆完全相同（變異數為 0），無法進行線性回歸。"
+        }, ensure_ascii=False)
+    
+    # 限制最大特徵數為 12，防止前端運算過久卡死
+    max_k = min(len(X.columns), 12)
+    
+    # 80/20 train/test split (固定隨機種子以確保重現性)
+    X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
+    
+    selected = []
+    steps = []
+    
+    for k in range(1, max_k + 1):
+        candidates = [col for col in X.columns if col not in selected]
+        best_rmse = np.inf
+        best_r2 = -np.inf
+        best_mae = np.inf
+        best_feat = None
+        best_model = None
+        
+        for feat in candidates:
+            feats = selected + [feat]
+            m = LinearRegression().fit(X_train[feats], y_train)
+            yp = m.predict(X_test[feats])
+            rmse = float(np.sqrt(mean_squared_error(y_test, yp)))
+            r2 = float(r2_score(y_test, yp))
+            mae = float(mean_absolute_error(y_test, yp))
+            
+            if rmse < best_rmse:
+                best_rmse = rmse
+                best_r2 = r2
+                best_mae = mae
+                best_feat = feat
+                best_model = m
+                
+        selected.append(best_feat)
+        coef_dict = {f: round(float(c), 4) for f, c in zip(selected, best_model.coef_)}
+        
+        steps.append({
+            'step': k,
+            'selected_features': list(selected),
+            'added_feature': best_feat,
+            'rmse': round(best_rmse, 4),
+            'r2': round(best_r2, 4),
+            'mae': round(best_mae, 4),
+            'intercept': round(float(best_model.intercept_), 4),
+            'coefficients': coef_dict
+        })
+        
+    # 找出全域最佳泛化點（測試集 RMSE 最低點）
+    optimal_k = min(range(len(steps)), key=lambda i: steps[i]['rmse']) + 1
+    opt_step = steps[optimal_k - 1]
+    opt_feats = opt_step['selected_features']
+    opt_m = LinearRegression().fit(X_train[opt_feats], y_train)
+    yp_opt = opt_m.predict(X_test[opt_feats])
+    
+    test_samples = []
+    for actual, pred in zip(y_test, yp_opt):
+        test_samples.append({
+            'actual': round(float(actual), 2),
+            'predicted': round(float(pred), 2),
+            'residual': round(float(actual - pred), 2)
+        })
+        
+    # 動態產生 What-If 模擬器所需之關鍵特徵參數
+    f1 = opt_feats[0]
+    min1 = float(X[f1].min())
+    max1 = float(X[f1].max())
+    span1 = max1 - min1
+    step1 = round(span1 / 50, 2) if span1 > 0 else 0.1
+    default1 = round(float(X[f1].median()), 2)
+    
+    sim_config = {
+        'is_generic': True,
+        'input1': {
+            'name': f1,
+            'label': f"重要特徵 1：{f1}",
+            'min': round(min1, 2),
+            'max': round(max1, 2),
+            'step': step1 if step1 > 0 else 0.1,
+            'default': default1,
+            'prefix': '',
+            'suffix': ''
+        }
+    }
+    
+    if len(opt_feats) > 1:
+        f2 = opt_feats[1]
+        min2 = float(X[f2].min())
+        max2 = float(X[f2].max())
+        span2 = max2 - min2
+        step2 = round(span2 / 50, 2) if span2 > 0 else 0.1
+        default2 = round(float(X[f2].median()), 2)
+        sim_config['input2'] = {
+            'name': f2,
+            'label': f"重要特徵 2：{f2}",
+            'min': round(min2, 2),
+            'max': round(max2, 2),
+            'step': step2 if step2 > 0 else 0.1,
+            'default': default2,
+            'prefix': '',
+            'suffix': ''
+        }
+    else:
+        sim_config['input2'] = sim_config['input1']
+        
+    return json.dumps({
+        'id': 'custom',
+        'title': f'自訂資料集 ({target_col} 預測)',
+        'description': f'針對自訂上傳之 CSV 資料集執行前向逐步特徵選取與多元回歸分析，目標預測變數為「{target_col}」，共完成 {len(steps)} 項候選特徵評估。',
+        'unit_label': target_col,
+        'value_prefix': '',
+        'value_suffix': '',
+        'total_features': len(steps),
+        'optimal_k': optimal_k,
+        'steps': steps,
+        'optimal_model': {
+            'features': opt_feats,
+            'intercept': round(float(opt_m.intercept_), 4),
+            'coefficients': {f: round(float(c), 4) for f, c in zip(opt_feats, opt_m.coef_)},
+            'rmse': round(opt_step['rmse'], 4),
+            'r2': round(opt_step['r2'], 4)
+        },
+        'test_samples': test_samples[:20],
+        'simulator': sim_config
+    }, ensure_ascii=False)
+
+output_json = execute_regression(py_csv_input, py_target_col)
+output_json
+`;
+
+function parseCSVLine(line) {
+  const result = [];
+  let cur = '';
+  let inQuotes = false;
+  for (let i = 0; i < line.length; i++) {
+    const c = line[i];
+    if (c === '"') {
+      inQuotes = !inQuotes;
+    } else if (c === ',' && !inQuotes) {
+      result.push(cur.trim());
+      cur = '';
+    } else {
+      cur += c;
+    }
+  }
+  result.push(cur.trim());
+  return result;
+}
+
+function parseCSVHeaders(csvText) {
+  const lines = csvText.trim().split(/\r?\n/).filter(l => l.trim().length > 0);
+  if (lines.length === 0) return [];
+  return parseCSVLine(lines[0]);
+}
+
+function initCustomDatasetUploader() {
+  const dropzone = document.getElementById('csv-dropzone');
+  const fileInput = document.getElementById('csv-file-input');
+  const browseBtn = document.getElementById('btn-browse-file');
+  const textArea = document.getElementById('csv-text-input');
+  const sampleBtn = document.getElementById('btn-load-sample');
+  const targetSelect = document.getElementById('custom-target-select');
+  const configBar = document.getElementById('custom-config-bar');
+  const detectedInfo = document.getElementById('config-detected-info');
+  const runBtn = document.getElementById('btn-run-analysis');
+  const errorBox = document.getElementById('custom-error-box');
+  const errorTitle = document.getElementById('custom-error-title');
+  const errorDesc = document.getElementById('custom-error-desc');
+  const statusText = document.getElementById('engine-status-text');
+  const statusDot = document.querySelector('.engine-status .status-dot');
+
+  function setStatus(text, type = 'normal') {
+    if (statusText) statusText.textContent = text;
+    if (statusDot) {
+      statusDot.className = 'status-dot';
+      if (type === 'loading') statusDot.classList.add('loading');
+      if (type === 'active') statusDot.classList.add('active');
+      if (type === 'error') statusDot.classList.add('error');
+    }
+  }
+
+  function showError(title, msg) {
+    if (errorBox) {
+      errorTitle.textContent = title;
+      errorDesc.textContent = msg;
+      errorBox.style.display = 'flex';
+    }
+    setStatus('資料檢核未通過', 'error');
+  }
+
+  function hideError() {
+    if (errorBox) errorBox.style.display = 'none';
+  }
+
+  function updateColumnDetection(headers) {
+    hideError();
+    if (!headers || headers.length < 2) {
+      configBar.style.display = 'none';
+      runBtn.disabled = true;
+      setStatus('CSV 表頭欄位不足（至少需 1 個特徵欄位與 1 個目標欄位）', 'error');
+      return;
+    }
+
+    // Populate Select Options
+    targetSelect.innerHTML = '';
+    headers.forEach((h, idx) => {
+      const opt = document.createElement('option');
+      opt.value = h;
+      opt.textContent = `${h} ${idx === headers.length - 1 ? '(預設)' : ''}`;
+      if (idx === headers.length - 1) opt.selected = true;
+      targetSelect.appendChild(opt);
+    });
+
+    configBar.style.display = 'flex';
+    runBtn.disabled = false;
+    renderColumnBadges();
+    setStatus('CSV 資料已就緒，可點擊「開始分析」');
+  }
+
+  function renderColumnBadges() {
+    const selectedTarget = targetSelect.value;
+    const headers = parseCSVHeaders(textArea.value);
+    detectedInfo.innerHTML = '';
+
+    headers.forEach(h => {
+      const badge = document.createElement('span');
+      badge.className = 'col-badge' + (h === selectedTarget ? ' target' : '');
+      badge.textContent = h === selectedTarget ? `🎯 目標: ${h}` : `特徵: ${h}`;
+      detectedInfo.appendChild(badge);
+    });
+  }
+
+  targetSelect.addEventListener('change', renderColumnBadges);
+
+  // File Drop Handlers
+  if (browseBtn && fileInput) {
+    browseBtn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      fileInput.click();
+    });
+    dropzone.addEventListener('click', () => fileInput.click());
+  }
+
+  if (fileInput) {
+    fileInput.addEventListener('change', (e) => {
+      const file = e.target.files[0];
+      if (file) handleFile(file);
+    });
+  }
+
+  if (dropzone) {
+    ['dragenter', 'dragover'].forEach(name => {
+      dropzone.addEventListener(name, (e) => {
+        e.preventDefault();
+        dropzone.classList.add('dragover');
+      });
+    });
+
+    ['dragleave', 'drop'].forEach(name => {
+      dropzone.addEventListener(name, (e) => {
+        e.preventDefault();
+        dropzone.classList.remove('dragover');
+      });
+    });
+
+    dropzone.addEventListener('drop', (e) => {
+      const files = e.dataTransfer.files;
+      if (files && files.length > 0) {
+        handleFile(files[0]);
+      }
+    });
+  }
+
+  function handleFile(file) {
+    if (!file.name.endsWith('.csv')) {
+      showError('檔案格式不符', '請上傳 .csv 格式之檔案！');
+      return;
+    }
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      textArea.value = e.target.result;
+      const headers = parseCSVHeaders(textArea.value);
+      updateColumnDetection(headers);
+    };
+    reader.readAsText(file);
+  }
+
+  // Textarea input event
+  if (textArea) {
+    textArea.addEventListener('input', () => {
+      const headers = parseCSVHeaders(textArea.value);
+      updateColumnDetection(headers);
+    });
+  }
+
+  // Sample CSV Button
+  if (sampleBtn) {
+    sampleBtn.addEventListener('click', () => {
+      textArea.value = SAMPLE_CSV;
+      const headers = parseCSVHeaders(SAMPLE_CSV);
+      updateColumnDetection(headers);
+    });
+  }
+
+  // Run Analysis Button Event
+  if (runBtn) {
+    runBtn.addEventListener('click', async () => {
+      const csvContent = textArea.value.trim();
+      const targetCol = targetSelect.value;
+
+      if (!csvContent) {
+        showError('無資料內容', '請先貼上或上傳 CSV 內容。');
+        return;
+      }
+
+      hideError();
+      runBtn.disabled = true;
+      setStatus('正在啟動 Python WebAssembly 執行環境...', 'loading');
+
+      try {
+        const py = await getPyodideInstance((msg) => setStatus(msg, 'loading'));
+        setStatus('正在執行前向特徵選取與多元回歸分析...', 'loading');
+
+        // Pass variables to Python
+        py.globals.set('py_csv_input', csvContent);
+        py.globals.set('py_target_col', targetCol);
+
+        // Run Python Script
+        const resultJsonStr = await py.runPythonAsync(PYTHON_ANALYSIS_SCRIPT);
+        const result = JSON.parse(resultJsonStr);
+
+        if (result.error) {
+          showError('資料驗證未通過', result.error);
+          runBtn.disabled = false;
+          return;
+        }
+
+        // Store into global datasets
+        allData.datasets.custom = result;
+        setStatus('✅ 分析完成！已即時更新下方儀表板與 What-If 模擬器。', 'active');
+        runBtn.disabled = false;
+
+        // Switch and display
+        switchDataset('custom');
+
+        // Smooth scroll to feature selection section
+        const resultSection = document.getElementById('section-feature-selection');
+        if (resultSection) {
+          resultSection.scrollIntoView({ behavior: 'smooth' });
+        }
+      } catch (err) {
+        console.error('Pyodide execution error:', err);
+        showError('運算執行錯誤', `Python 執行期間發生未預期錯誤：${err.message || err}`);
+        setStatus('運算發生錯誤', 'error');
+        runBtn.disabled = false;
+      }
+    });
+  }
 }
