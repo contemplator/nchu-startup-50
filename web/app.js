@@ -633,14 +633,21 @@ def execute_regression(csv_content, target_col):
             "error": f"在資料集表頭中找不到選定的目標預測變數：'{target_col}'。"
         }, ensure_ascii=False)
     
-    # 3. 缺失值 (NaN / Null) 嚴謹檢核
-    null_counts = df.isnull().sum()
-    cols_with_null = null_counts[null_counts > 0]
-    if len(cols_with_null) > 0:
-        details = "、".join([f"「{col}」包含 {cnt} 筆空值" for col, cnt in cols_with_null.items()])
-        return json.dumps({
-            "error": f"檢測到資料集包含缺失值 (NaN)：{details}。為確保回歸模型品質，請先補齊或清理缺失資料後再上傳！"
-        }, ensure_ascii=False)
+    # 3. CRISP-DM 智慧容錯清理：缺失值 (NaN / Null) 檢驗與自適應清理
+    clean_notes = []
+    total_null_rows = int(df.isnull().any(axis=1).sum())
+    if total_null_rows > 0:
+        null_ratio = total_null_rows / len(df)
+        if null_ratio <= 0.10: # 缺失值佔比 <= 10%，自動執行合理清理
+            df = df.dropna()
+            clean_notes.append(f"偵測到 {total_null_rows} 筆包含空值 (NaN) 之樣本（佔比 {null_ratio:.2%}），已依 CRISP-DM 資料準備規範自動清理剔除。")
+        else: # 缺失值過多才中斷提示
+            null_counts = df.isnull().sum()
+            cols_with_null = null_counts[null_counts > 0]
+            details = "、".join([f"「{col}」包含 {cnt} 筆空值" for col, cnt in cols_with_null.items()])
+            return json.dumps({
+                "error": f"資料集缺失值比例過高（共 {total_null_rows} 筆，佔比 {null_ratio:.1%}）：{details}。為避免模型失真，請先進行特徵清理或補值！"
+            }, ensure_ascii=False)
     
     # 4. 目標變數型別檢核
     if not np.issubdtype(df[target_col].dtype, np.number):
@@ -648,15 +655,30 @@ def execute_regression(csv_content, target_col):
             "error": f"目標欄位「{target_col}」不是數值型別（目前型別為 {df[target_col].dtype}）。多元線性回歸的預測目標必須為連續數值！"
         }, ensure_ascii=False)
     
-    # 5. 特徵切分與 One-Hot Encoding
+    # 5. 特徵切分與高基數純文字欄位自動過濾 (例如 track_id, 歌曲名, 歌手名)
     y = df[target_col]
     X_raw = df.drop(columns=[target_col])
     
+    # 移除純索引或空欄位
+    unnamed_cols = [c for c in X_raw.columns if c.startswith('Unnamed:') or c == '']
+    if unnamed_cols:
+        X_raw = X_raw.drop(columns=unnamed_cols)
+        
+    # 依 CRISP-DM 規範過濾類別數過多 (>30) 的純文字識別標題欄位
+    high_card_text = []
+    for col in X_raw.select_dtypes(include=['object', 'category']).columns:
+        if X_raw[col].nunique() > 30:
+            high_card_text.append(col)
+    if high_card_text:
+        X_raw = X_raw.drop(columns=high_card_text)
+        clean_notes.append(f"已自動排除 {len(high_card_text)} 個非數值文字標題欄位（{', '.join(high_card_text[:3])}{'...' if len(high_card_text)>3 else ''}），專注於核心特徵分析。")
+        
     if X_raw.shape[1] == 0:
         return json.dumps({
             "error": "除目標欄位外，未檢測到任何可用特徵自變數 (X)。"
         }, ensure_ascii=False)
     
+    # One-Hot Encoding (drop_first=True)
     X = pd.get_dummies(X_raw, drop_first=True)
     
     # 移除零變異數欄位
@@ -789,7 +811,8 @@ def execute_regression(csv_content, target_col):
             'r2': round(opt_step['r2'], 4)
         },
         'test_samples': test_samples[:20],
-        'simulator': sim_config
+        'simulator': sim_config,
+        'clean_note': ' '.join(clean_notes) if clean_notes else None
     }, ensure_ascii=False)
 
 output_json = execute_regression(py_csv_input, py_target_col)
@@ -815,10 +838,12 @@ function parseCSVLine(line) {
   return result;
 }
 
+// 疾速第一列表頭解析（絕不全文切割大檔案）
 function parseCSVHeaders(csvText) {
-  const lines = csvText.trim().split(/\r?\n/).filter(l => l.trim().length > 0);
-  if (lines.length === 0) return [];
-  return parseCSVLine(lines[0]);
+  if (!csvText) return [];
+  const firstNewline = csvText.indexOf('\n');
+  const firstLine = firstNewline !== -1 ? csvText.slice(0, firstNewline) : csvText;
+  return parseCSVLine(firstLine.replace(/\r$/, ''));
 }
 
 function initCustomDatasetUploader() {
@@ -834,8 +859,14 @@ function initCustomDatasetUploader() {
   const errorBox = document.getElementById('custom-error-box');
   const errorTitle = document.getElementById('custom-error-title');
   const errorDesc = document.getElementById('custom-error-desc');
+  const noticeBox = document.getElementById('custom-notice-box');
+  const noticeDesc = document.getElementById('custom-notice-desc');
   const statusText = document.getElementById('engine-status-text');
   const statusDot = document.querySelector('.engine-status .status-dot');
+
+  // 記憶體中儲存完整 CSV 內容，避免塞爆 DOM <textarea>
+  let loadedCSVData = '';
+  let currentHeaders = [];
 
   function setStatus(text, type = 'normal') {
     if (statusText) statusText.textContent = text;
@@ -853,16 +884,19 @@ function initCustomDatasetUploader() {
       errorDesc.textContent = msg;
       errorBox.style.display = 'flex';
     }
+    if (noticeBox) noticeBox.style.display = 'none';
     setStatus('資料檢核未通過', 'error');
   }
 
-  function hideError() {
+  function hideAlerts() {
     if (errorBox) errorBox.style.display = 'none';
+    if (noticeBox) noticeBox.style.display = 'none';
   }
 
   function updateColumnDetection(headers) {
-    hideError();
-    if (!headers || headers.length < 2) {
+    hideAlerts();
+    currentHeaders = headers || [];
+    if (!currentHeaders || currentHeaders.length < 2) {
       configBar.style.display = 'none';
       runBtn.disabled = true;
       setStatus('CSV 表頭欄位不足（至少需 1 個特徵欄位與 1 個目標欄位）', 'error');
@@ -871,11 +905,13 @@ function initCustomDatasetUploader() {
 
     // Populate Select Options
     targetSelect.innerHTML = '';
-    headers.forEach((h, idx) => {
+    currentHeaders.forEach((h, idx) => {
+      // 略過純空白或未命名之索引欄位
+      if (!h || h.startsWith('Unnamed:')) return;
       const opt = document.createElement('option');
       opt.value = h;
-      opt.textContent = `${h} ${idx === headers.length - 1 ? '(預設)' : ''}`;
-      if (idx === headers.length - 1) opt.selected = true;
+      opt.textContent = `${h} ${idx === currentHeaders.length - 1 ? '(預設)' : ''}`;
+      if (idx === currentHeaders.length - 1) opt.selected = true;
       targetSelect.appendChild(opt);
     });
 
@@ -887,10 +923,10 @@ function initCustomDatasetUploader() {
 
   function renderColumnBadges() {
     const selectedTarget = targetSelect.value;
-    const headers = parseCSVHeaders(textArea.value);
     detectedInfo.innerHTML = '';
 
-    headers.forEach(h => {
+    currentHeaders.forEach(h => {
+      if (!h || h.startsWith('Unnamed:')) return;
       const badge = document.createElement('span');
       badge.className = 'col-badge' + (h === selectedTarget ? ' target' : '');
       badge.textContent = h === selectedTarget ? `🎯 目標: ${h}` : `特徵: ${h}`;
@@ -946,9 +982,22 @@ function initCustomDatasetUploader() {
     }
     const reader = new FileReader();
     reader.onload = (e) => {
-      textArea.value = e.target.result;
-      const headers = parseCSVHeaders(textArea.value);
-      updateColumnDetection(headers);
+      loadedCSVData = e.target.result;
+
+      // 關鍵效能優化：大檔案絕不全文注入 DOM <textarea>，改用智慧預覽模式
+      if (loadedCSVData.length > 30000) {
+        let previewEnd = 0;
+        for (let count = 0; count < 25 && previewEnd !== -1; count++) {
+          previewEnd = loadedCSVData.indexOf('\n', previewEnd + 1);
+        }
+        const previewSlice = previewEnd !== -1 ? loadedCSVData.slice(0, previewEnd) : loadedCSVData.slice(0, 5000);
+        textArea.value = `${previewSlice}\n\n... [已載入檔案：${file.name}，大小 ${(file.size / (1024 * 1024)).toFixed(1)} MB。已自動啟用流暢預覽模式以確保瀏覽器極致反應速度]`;
+      } else {
+        textArea.value = loadedCSVData;
+      }
+
+      currentHeaders = parseCSVHeaders(loadedCSVData);
+      updateColumnDetection(currentHeaders);
     };
     reader.readAsText(file);
   }
@@ -956,24 +1005,26 @@ function initCustomDatasetUploader() {
   // Textarea input event
   if (textArea) {
     textArea.addEventListener('input', () => {
-      const headers = parseCSVHeaders(textArea.value);
-      updateColumnDetection(headers);
+      loadedCSVData = textArea.value;
+      currentHeaders = parseCSVHeaders(loadedCSVData);
+      updateColumnDetection(currentHeaders);
     });
   }
 
   // Sample CSV Button
   if (sampleBtn) {
     sampleBtn.addEventListener('click', () => {
+      loadedCSVData = SAMPLE_CSV;
       textArea.value = SAMPLE_CSV;
-      const headers = parseCSVHeaders(SAMPLE_CSV);
-      updateColumnDetection(headers);
+      currentHeaders = parseCSVHeaders(SAMPLE_CSV);
+      updateColumnDetection(currentHeaders);
     });
   }
 
   // Run Analysis Button Event
   if (runBtn) {
     runBtn.addEventListener('click', async () => {
-      const csvContent = textArea.value.trim();
+      const csvContent = loadedCSVData.trim();
       const targetCol = targetSelect.value;
 
       if (!csvContent) {
@@ -981,7 +1032,7 @@ function initCustomDatasetUploader() {
         return;
       }
 
-      hideError();
+      hideAlerts();
       runBtn.disabled = true;
       setStatus('正在啟動 Python WebAssembly 執行環境...', 'loading');
 
@@ -998,9 +1049,15 @@ function initCustomDatasetUploader() {
         const result = JSON.parse(resultJsonStr);
 
         if (result.error) {
-          showError('資料驗證未通過', result.error);
+          showError('資料檢驗未通過', result.error);
           runBtn.disabled = false;
           return;
+        }
+
+        // 智慧容錯清理提示反饋
+        if (result.clean_note && noticeBox) {
+          noticeDesc.textContent = result.clean_note;
+          noticeBox.style.display = 'flex';
         }
 
         // Store into global datasets
